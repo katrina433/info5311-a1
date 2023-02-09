@@ -1,124 +1,305 @@
-<html><head>
-    <title>INFO 3300 - March 9</title>
+<html>
+  <head>
+    <title>INFO 5311 - HW1</title>
     
       <link href="https://fonts.googleapis.com/css?family=Lato:400,700|Raleway:400,700" rel="stylesheet">
     
-      <link rel="stylesheet" type="text/css" href="../css/normalize.css">
-      <link rel="stylesheet" type="text/css" href="../css/skeleton.css">
-      <link rel="stylesheet" type="text/css" href="../css/custom-style.css">
-    
       <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.14.2/styles/default.min.css">
       <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.14.2/highlight.min.js"></script>
-      <script src="https://d3js.org/d3.v5.min.js"></script>
+      <script src="https://d3js.org/d3.v7.min.js"></script>
       <script src="https://d3js.org/topojson.v2.min.js"></script>
       <style>
-    
-      .neighborhood {
-        fill: #EEE;
-        stroke: white;
-        stroke-width: 2px;
-      }
-    
+        .neighborhood {
+          fill: #EEE;
+          stroke: white;
+          stroke-width: 2px;
+        }
+        .gridlines line {
+          stroke: #bbb;
+        }
+
+        .gridlines .domain {
+          stroke: none;
+        }
       </style>
-    
-    </head>
-    <body>
-      <div class="container larger">
-        <p> A map of SF trees:</p>
-      <svg id="points" height="900" width="900" style="background: #fff; margin-top:50px" >
-    
+  </head>
+  <body>
+    <div class="container larger">
+      <svg id="legal_status_map" height="900" width="900" style="background: #fff; margin-top:50px" >
       </svg>
+      <svg id="legal_status_pie" height="450" width="450" style="background: #fff; margin-top:50px" >
+      </svg>
+      <svg id="care_taker_map" height="900" width="900" style="background: #fff; margin-top:50px" >
+      </svg>
+      <svg id="care_taker_pie" height="450" width="450" style="background: #fff; margin-top:50px" >
+      </svg>
+      <svg id="plot_vs_dbh" height="900" width="1500" style="background: #fff; margin-top:50px" >
+      </svg>
+
+      <div id="my_dataviz"></div>
     
-    
-    
-      <script id="notes1">
-    
-      const svg = d3.select("#points");
-      const width = svg.attr("width");
-      const height = svg.attr("height");
-      const margin = { top: 20, right: 20, bottom: 20, left:20};
-      const mapWidth = width - margin.left - margin.right;
-      const mapHeight = height - margin.top - margin.bottom;
-      const map = svg.append("g")
-                      .attr("transform","translate("+margin.left+","+margin.top+")");
-    
-      // Let's make a map of all of the municipal trees in San Francisco
-      // With any luck, we ought to be able to visualize the streets/blocks in the city, since trees line them
-      //   (this is really just an excuse to make a lot of dots)
-      
-      // Datasets for today:
-      //  "../datasets/SF-Neighborhoods.json"
-      //  "../datasets/Street_Tree_List_smaller.csv"
-    
-    
-      // 1. Make the visualization
-      //  (refer to 03/04 notes for more comments)
-      const requestData = async function() {
+      <script id="hw1">
+        const margin = { top: 50, right: 50, bottom: 50, left:50};
         
-        const sf = await d3.json("./SF-Neighborhoods.json");
-        console.log(sf);
-        
-        // We find that the feature we want to visualize is the SFNeighborhoods property within objects
-        //  Always search .objects for different features to show in a topoJSON dataset
-        var neighborhoods = topojson.feature(sf, sf.objects.SFNeighborhoods);
-        
-        // We use Mercator projection instead of a "better" projection because it's more familiar
-        // It also leads to a flat line on the bottom of the city due to how the projection makes all
-        //  latitude lines flat (which allows rhumb line equivalency)
-        var projection = d3.geoMercator().fitSize([mapWidth, mapHeight], neighborhoods);
-        var path = d3.geoPath().projection(projection);
-        
-        // Draw neighborhoods
-        // Just as in our line generators, the scale is used by the generator to take complex data and
-        //  generate fancy paths
-        map.selectAll("path.neighborhood").data(neighborhoods.features)
-          .join("path")
-          .attr("class", "neighborhood")
-          .attr("d", path);
+        // select the SVGs for each visualization
+        const legalStatusSvg = d3.select("#legal_status_map");
+        const legalStatusPieSvg = d3.select("#legal_status_pie");
+        const careTakerSvg = d3.select("#care_taker_map");
+        const careTakerPieSvg = d3.select("#care_taker_pie");
+        const plotSizeVsDbhSvg = d3.select("#plot_vs_dbh");
+
+        // dimension for maps
+        const mWidth = careTakerSvg.attr("width");
+        const mHeight = careTakerSvg.attr("width");
+        const mapWidth = mWidth - margin.left - margin.right;
+        const mapHeight = mHeight - margin.top - margin.bottom;
+
+        // dimension for pie charts
+        const pieWidth = careTakerPieSvg.attr("width");
+        const pieHeight = careTakerPieSvg.attr("height");
+        const pieRadius = Math.min(pieWidth, pieHeight) / 2 - 40;
+
+        // dimension for scatter plots
+        const cWidth = plotSizeVsDbhSvg.attr("width");
+        const cHeight = plotSizeVsDbhSvg.attr("height");
+        const chartWidth = cWidth - margin.left - margin.right;
+        const chartHeight = cHeight - margin.top - margin.bottom;
+
+        // map for legal status
+        const legalStatusMap = legalStatusSvg
+          .append("g")
+          .attr("transform", "translate("+margin.left+","+margin.top+")");
+
+        // pie chart for legal status
+        const legalStatusPie = legalStatusPieSvg
+          .append("g")
+          .attr("transform", "translate(" + pieWidth / 2 + "," + pieHeight / 2 + ")");
+
+        // map for care takers
+        const careTakerMap = careTakerSvg
+          .append("g")
+          .attr("transform", "translate("+margin.left+","+margin.top+")");
+
+        // pie chart for care takers
+        const careTakerPie = careTakerPieSvg
+          .append("g")
+          .attr("transform", "translate(" + pieWidth / 2 + "," + pieHeight / 2 + ")");
+
+        // scatter plot for plot size vs dbh
+        const plotSizeVsDbhAnnotations = plotSizeVsDbhSvg.append("g")
+          .attr("id", "annotations");
+        const plotSizeVsDbh = plotSizeVsDbhSvg
+          .append("g")
+          .attr("transform", "translate("+margin.left+","+margin.top+")");
+
+        const requestData = async function() {
           
+          // read SF geo information
+          const sf = await d3.json("./SF-Neighborhoods.geo.json");
           
-        const trees = await d3.csv("./Street_Tree_List_smaller.csv");
-        
-        
-        // We need to figure out where to position the dots. Since we may have a lot of them, let's process
-        //  the data ahead of time and add to our dict
-        // (Main reason for doing this is that otherwise we would have to call projection() twice, once
-        //    for 'cx' and once for 'cy')
-        trees.forEach( d => {
+          // From lecture demo
+          // We find that the feature we want to visualize is the SFNeighborhoods property within objects
+          // Always search .objects for different features to show in a topoJSON dataset
+          const neighborhoods = topojson.feature(sf, sf.objects.SFNeighborhoods);
           
-          // Use the projection just like a scale to convert from lng/lat to pixels
-          d.Position = projection( [d.Longitude, d.Latitude] );
+          // We use Mercator projection instead of a "better" projection because it's more familiar
+          // It also leads to a flat line on the bottom of the city due to how the projection makes all
+          // latitude lines flat (which allows rhumb line equivalency)
+          const projection = d3.geoMercator().fitSize([mapWidth, mapHeight], neighborhoods);
+          const path = d3.geoPath().projection(projection);
+
+          // Group smaller care takers as "others"
+          const groupCareTakers = (careTaker) => ["DPW", "Private"].includes(careTaker) ? careTaker : "other";
+          // Group smaller legal status as "others"
+          const groupLegalStatus = (legalStatus) => ["DPW Maintained", "Permitted Site"].includes(legalStatus) ? legalStatus : "other";
+
+          // Parse the plot size attribute and add an "Area" attribute for each data point
+          // Valid plot size comes in two forms: "lxw" or "width xft"
+          const getArea = (plot_size) => {
+            const plot_size_lower = plot_size.toLowerCase();
+            if (plot_size_lower.includes("x")) {
+              const dimen = plot_size_lower.split("x");
+              const l = parseFloat(dimen[0]);
+              const w = parseFloat(dimen[1]);
+              return l * w;
+            }
+            const w = parseFloat(plot_size_lower.substring(6, plot_size_lower.length - 2));
+            return w * w;
+          }
           
-        });
-        
-        // Draw circles using the Positions we just made
-        map.selectAll("circle").data(trees)
-           .join("circle")
-           .attr("r", 1)
-           .attr("fill", "forestgreen")
-           .attr("opacity", 0.4)
-           .attr("cx", d => d.Position[0])
-           .attr("cy", d => d.Position[1]);
-        
-        
-        
-      }
-      requestData();
-      
-      
-      
-    
-    
-    
-    
+          // read tree data
+          const data = await d3.csv("./Street_Tree_List-2022-01-30_FILTERED.csv");
+          console.log(data)
+          
+          // preprocess the data
+          data.forEach( d => {
+            // Use the projection just like a scale to convert from lng/lat to pixels
+            d.Position = projection( [d.Longitude, d.Latitude] );
+            // Group smaller care takers as "other"
+            d.qCaretaker = groupCareTakers(d.qCaretaker);
+            // Group smaller legal status as "other"
+            d.qLegalStatus = groupLegalStatus(d.qLegalStatus);
+            // Use getArea to parse and calculate the plot area
+            d.PlotArea = getArea( d.PlotSize );
+            // Cast DBH into int
+            d.DBH = parseInt(d.DBH);
+          });
+
+          // Initialize data extents and scales
+          const dbhExtent = d3.extent(data, d => d.DBH);
+          const legalStatusExtent = d3.extent(data, d => d.qLegalStatus);
+          const careTakerExtent = d3.extent(data, d => d.qCaretaker);
+          const plotSizeExtent = d3.extent(data, d => d.PlotArea);
+          
+          const dbhScale = d3.scaleLinear().domain(dbhExtent).range([chartHeight, 0]);
+          const dbhRadiusScale = d3.scaleLinear().domain(dbhExtent).range([0, 8]);
+          const legalStatusScale = d3.scaleOrdinal(d3.schemeCategory10).domain(legalStatusExtent);
+          const careTakerScale = d3.scaleOrdinal(d3.schemeCategory10).domain(careTakerExtent);
+          const plotSizeScale = d3.scaleLog().domain(plotSizeExtent).range([0, chartWidth]);
+
+          // Visualization #1: radius: DBH, color: legal status
+          legalStatusMap.selectAll("path.neighborhood").data(neighborhoods.features)
+            .join("path")
+            .attr("class", "neighborhood")
+            .attr("d", path);
+
+          legalStatusMap.selectAll("circle").data(data)
+            .join("circle")
+            .attr("opacity", 0.4)
+            .attr("r", d => dbhRadiusScale(d.DBH))
+            .attr("fill", d => legalStatusScale(d.qLegalStatus))
+            .attr("cx", d => d.Position[0])
+            .attr("cy", d => d.Position[1]);
+
+          // Visualization #2: pie chart for legal status distribution
+          const legalStatusCounter = {}
+          data.forEach(d => {
+            if (d.qLegalStatus in legalStatusCounter) {
+              legalStatusCounter[d.qLegalStatus] += 1;
+            } else {
+              legalStatusCounter[d.qLegalStatus] = 1;
+            }
+          });
+
+          const legalStatusPieChart = d3.pie().value(d => d[1]);
+          const legalStatusPieData = legalStatusPieChart(Object.entries(legalStatusCounter));
+
+          const arcGenerator = d3.arc()
+            .innerRadius(0)
+            .outerRadius(pieRadius);
+
+          legalStatusPie
+            .selectAll('mySlices')
+            .data(legalStatusPieData)
+            .join('path')
+              .attr('d', arcGenerator)
+              .attr('fill', d => legalStatusScale(d.data[0]))
+              .style("opacity", 0.7);
+          
+          const labelPosition = (d) => d.data[0] === "other" ? 
+            [arcGenerator.centroid(d)[0], arcGenerator.centroid(d)[1] - 30] :
+            arcGenerator.centroid(d);
+
+          legalStatusPie
+            .selectAll('mySlices')
+            .data(legalStatusPieData)
+            .join('text')
+            .text(d => d.data[0])
+            .attr("transform", d => `translate(${labelPosition(d)})`)
+            .style("text-anchor", "middle")
+            .style("font-size", 17);
+
+          // Visualization #3: radius: DBH, color: care taker
+          careTakerMap.selectAll("path.neighborhood").data(neighborhoods.features)
+            .join("path")
+            .attr("class", "neighborhood")
+            .attr("d", path);
+
+          careTakerMap.selectAll("circle").data(data)
+            .join("circle")
+            .attr("opacity", 0.4)
+            .attr("r", d => dbhRadiusScale(d.DBH))
+            .attr("fill", d => careTakerScale(d.qCaretaker))
+            .attr("cx", d => d.Position[0])
+            .attr("cy", d => d.Position[1]);
+
+          // Visualization #4: pie chart for care taker distribution
+          const careTakerCounter = {}
+          data.forEach(d => {
+            if (d.qCaretaker in careTakerCounter) {
+              careTakerCounter[d.qCaretaker] += 1;
+            } else {
+              careTakerCounter[d.qCaretaker] = 1;
+            }
+          });
+
+          const careTakerPieChart = d3.pie().value(d => d[1]);
+          const careTakerPieData = careTakerPieChart(Object.entries(careTakerCounter));
+
+          careTakerPie
+            .selectAll('mySlices')
+            .data(careTakerPieData)
+            .join('path')
+              .attr('d', arcGenerator)
+              .attr('fill', d => careTakerScale(d.data[0]))
+              .style("opacity", 0.7);
+
+          careTakerPie
+            .selectAll('mySlices')
+            .data(careTakerPieData)
+            .join('text')
+            .text(d => d.data[0])
+            .attr("transform", d => `translate(${arcGenerator.centroid(d)})`)
+            .style("text-anchor", "middle")
+            .style("font-size", 17)
+
+
+          // Visualization #5: x: plot size, y: DBH, color: care taker
+          const xAxis = d3.axisBottom(plotSizeScale).tickFormat(d3.format("~f"));
+          const xGridLines = d3.axisBottom(plotSizeScale).tickSize(-chartHeight-10).tickFormat("");
+          const yAxis = d3.axisLeft(dbhScale).tickFormat(d3.format("~f"));
+          const yGridLines = d3.axisLeft(dbhScale).tickSize(-chartWidth-10).tickFormat("");
+
+          plotSizeVsDbhAnnotations.append("g")
+            .attr("class", "y axis")
+            .attr("transform", "translate("+(margin.left-10)+","+margin.top+")")
+            .call(yAxis);
+          plotSizeVsDbhAnnotations.append("g")
+            .attr("class", "y gridlines")
+            .attr("transform","translate("+(margin.left-10)+","+margin.top+")")
+            .call(yGridLines);
+          plotSizeVsDbhAnnotations.append("text")
+            .attr("class", "y label")
+            .attr("text-anchor", "middle")
+            .attr("y", margin.top - 35)
+            .attr("x", -cHeight/2)
+            .attr("transform", "rotate(-90)")
+            .text("DBH");
+          plotSizeVsDbhAnnotations.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate("+margin.left+","+(chartHeight+margin.top+10)+")")
+            .call(xAxis);
+          plotSizeVsDbhAnnotations.append("g")
+            .attr("class", "y gridlines")
+            .attr("transform","translate("+margin.left+","+(chartHeight+margin.top+10)+")")
+            .call(xGridLines);
+          plotSizeVsDbhAnnotations.append("text")
+            .attr("class", "x label")
+            .attr("text-anchor", "middle")
+            .attr("x", cWidth/2)
+            .attr("y", chartHeight + margin.top + 45)
+            .text("Plot Area (ft^2)");
+
+          plotSizeVsDbh.selectAll("circle").data(data)
+            .join("circle")
+            .attr("opacity", 0.75)
+            .attr("r", 4)
+            .attr("fill", d => careTakerScale(d.qCaretaker))
+            .attr("cx", d => plotSizeScale(d.PlotArea))
+            .attr("cy", d => dbhScale(d.DBH));
+        }
+        requestData();
       </script>
-    
-    
-    
-    
-    
-      
-    
-      </div>
-    </body>
-    </html>
+    </div>
+  </body>
+</html>
